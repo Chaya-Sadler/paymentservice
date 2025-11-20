@@ -1,6 +1,5 @@
 package com.chayasadler.paymentservice.service;
 
-import com.chayasadler.paymentservice.dao.IEventRepository;
 import com.chayasadler.paymentservice.dao.IProcessedEventRepository;
 import com.chayasadler.paymentservice.dao.IPaymentRepository;
 import com.chayasadler.paymentservice.model.Payment;
@@ -76,24 +75,7 @@ public class PaymentService {
             //write to outbox event (producer part)
             String eventType =  paymentStatus.equals("AUTHORIZED") ? "PaymentCompleted" : "PaymentFailed";
 
-            InventoryEvent paymentEvent = new InventoryEvent(
-                    UUID.randomUUID(), //new unique message id for idempotency of kafka messages
-                    eventType,
-                    inventoryEvent.orderId(),
-                    inventoryEvent.customerId(),
-                    inventoryEvent.totalAmt(),
-                    inventoryEvent.orderItemEventList(),
-                    paymentStatus.equals("AUTHORIZED") ? "Completed" : "Cancelled", //order status
-                    paymentStatus,
-                    LocalDateTime.now()
-            );
-            String paymentPayload;
-            try {
-                paymentPayload = mapper.writeValueAsString(paymentEvent);
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
-            }
-            outboxService.saveEvent(eventType, inventoryEvent.orderId().toString(), paymentPayload);
+            outboxService.saveEvent(eventType, inventoryEvent, paymentStatus);
         }
     }
 }
