@@ -3,10 +3,8 @@ package com.chayasadler.paymentservice.service;
 import com.chayasadler.paymentservice.dao.IEventRepository;
 import com.chayasadler.paymentservice.dao.IProcessedEventRepository;
 import com.chayasadler.paymentservice.dao.IPaymentRepository;
-import com.chayasadler.paymentservice.model.OutBoxEvent;
 import com.chayasadler.paymentservice.model.Payment;
 import com.chayasadler.paymentservice.model.ProcessedEvent;
-import com.chayasadler.paymentservice.util.EventStatus;
 import com.chayasadler.paymentservice.util.InventoryEvent;
 import com.chayasadler.paymentservice.util.PaymentStatus;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -27,32 +25,26 @@ public class PaymentService {
     private String simulateMode;
 
     @Autowired
+    OutboxService outboxService;
+
+    @Autowired
     private ObjectMapper mapper;
 
     @Autowired
     private IProcessedEventRepository iProcessedEventRepository;
 
     @Autowired
-    private IEventRepository iEventRepository;
-
-    @Autowired
     private IPaymentRepository iPaymentRepository;
 
     @Transactional
-    public void handlePayment(String payload) {
+    public void completePayment(InventoryEvent inventoryEvent) {
 
-        InventoryEvent inventoryEvent;
-
-        try {
-            inventoryEvent = mapper.readValue(payload, InventoryEvent.class);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
-        }
         //check if the incoming message was already processed - Idempotency( Consumer part)
-        Optional<ProcessedEvent> findProcessedEvent = iProcessedEventRepository.findByEventId((inventoryEvent.messageId()));
-        if(findProcessedEvent.isEmpty() && inventoryEvent.orderStatus().equals("InventoryReserved")){
+        Optional<ProcessedEvent> findProcessedEvent = iProcessedEventRepository.
+                findByEventId((inventoryEvent.messageId()));
+        if(findProcessedEvent.isEmpty()){
             //handle payment
-            PaymentStatus paymentStatus = switch (simulateMode) {
+            PaymentStatus status = switch (simulateMode) {
                 case "ALWAYS_SUCCESS" -> PaymentStatus.AUTHORIZED;
                 case "RANDOM" -> Math.random() < 0.7 ? PaymentStatus.AUTHORIZED : PaymentStatus.FAILED;
                 default -> PaymentStatus.FAILED;
@@ -66,28 +58,33 @@ public class PaymentService {
             iProcessedEventRepository.save(processedEvent);
 
             //save payment record in payment db
+            String paymentStatus = status.name();
+
             Payment payment = new Payment();
             payment.setOrderId(inventoryEvent.orderId());
             payment.setCustomerId(inventoryEvent.customerId());
             payment.setTotalAmt(inventoryEvent.totalAmt());
             payment.setProviderTransactionId("SIM-" + UUID.randomUUID());
             payment.setPaymentMethod("SIMULATION");
-            payment.setPaymentStatus(paymentStatus.name());
+            payment.setPaymentStatus(paymentStatus);
             payment.setFailureReason(
-                    paymentStatus.name().equals("FAILED") ? "SIMULATION_FAILURE" : ""
+                    paymentStatus.equals("FAILED") ? "SIMULATION_FAILURE" : ""
             );
             payment.setCreatedAt(LocalDateTime.now());
             iPaymentRepository.save(payment);
 
             //write to outbox event (producer part)
+            String eventType =  paymentStatus.equals("AUTHORIZED") ? "PaymentCompleted" : "PaymentFailed";
+
             InventoryEvent paymentEvent = new InventoryEvent(
                     UUID.randomUUID(), //new unique message id for idempotency of kafka messages
+                    eventType,
                     inventoryEvent.orderId(),
                     inventoryEvent.customerId(),
                     inventoryEvent.totalAmt(),
                     inventoryEvent.orderItemEventList(),
-                    paymentStatus.name().equals("AUTHORIZED") ? "Completed" : "Cancelled",
-                    paymentStatus.name(),
+                    paymentStatus.equals("AUTHORIZED") ? "Completed" : "Cancelled", //order status
+                    paymentStatus,
                     LocalDateTime.now()
             );
             String paymentPayload;
@@ -96,18 +93,7 @@ public class PaymentService {
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }
-
-            OutBoxEvent outBoxEvent = new OutBoxEvent();
-            outBoxEvent.setEventType(
-                    paymentStatus.name().equals("AUTHORIZED") ? "PaymentAuthorized" : "PaymentFailed"
-            );
-            outBoxEvent.setAggregateId(inventoryEvent.orderId().toString());
-            outBoxEvent.setAggregateType("Payment");
-            outBoxEvent.setPayload(paymentPayload);
-            outBoxEvent.setStatus(EventStatus.UNSENT.name());
-            outBoxEvent.setCreatedAt(LocalDateTime.now());
-            iEventRepository.save(outBoxEvent);
-
+            outboxService.saveEvent(eventType, inventoryEvent.orderId().toString(), paymentPayload);
         }
     }
 }
