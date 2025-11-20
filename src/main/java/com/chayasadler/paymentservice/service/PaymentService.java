@@ -27,9 +27,6 @@ public class PaymentService {
     OutboxService outboxService;
 
     @Autowired
-    private ObjectMapper mapper;
-
-    @Autowired
     private IProcessedEventRepository iProcessedEventRepository;
 
     @Autowired

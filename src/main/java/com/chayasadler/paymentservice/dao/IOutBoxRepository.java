@@ -12,6 +12,6 @@ import java.util.UUID;
 @Repository
 public interface IOutBoxRepository extends JpaRepository<OutBoxEvent, UUID> {
 
-    @Query( " SELECT e from OutBoxEvent WHERE e.processedAt is null and e.status = 'UNSENT' ORDER BY e.createdAt")
+    @Query( " SELECT e from OutBoxEvent e WHERE e.processedAt is null and e.status = 'UNSENT' ORDER BY e.createdAt")
     public List<OutBoxEvent> findAllUnsentOutBoxEvents(Pageable pageSize);
 }
