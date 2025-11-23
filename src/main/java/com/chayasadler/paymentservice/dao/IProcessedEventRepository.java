@@ -11,6 +11,6 @@ import java.util.UUID;
 @Repository
 public interface IProcessedEventRepository extends JpaRepository<ProcessedEvent, UUID> {
 
-    @Query( " SELECT pe FROM ProcessedEvent pe WHERE pe.eventId =:messageID")
+    @Query( " SELECT pe FROM ProcessedEvent pe WHERE pe.eventId =:messageId")
     public Optional<ProcessedEvent> findByEventId(UUID messageId);
 }

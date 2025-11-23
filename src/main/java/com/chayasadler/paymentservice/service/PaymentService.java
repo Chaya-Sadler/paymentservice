@@ -20,7 +20,7 @@ import java.util.UUID;
 @Service
 public class PaymentService {
 
-    @Value("{payment.simulate.mode}")
+    @Value("{$payment.simulate.mode}")
     private String simulateMode;
 
     @Autowired

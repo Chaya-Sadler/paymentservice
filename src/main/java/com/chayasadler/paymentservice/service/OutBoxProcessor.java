@@ -16,7 +16,7 @@ import java.util.List;
 @Service
 public class OutBoxProcessor {
 
-    @Value("{spring.kafka.topic}")
+    @Value("${spring.kafka.topic}")
     private String topicName;
 
     @Autowired
